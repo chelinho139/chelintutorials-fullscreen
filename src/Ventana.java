@@ -1,13 +1,12 @@
 import java.awt.Color;
 import java.awt.Font;
-import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.GraphicsDevice;
 import java.awt.GraphicsEnvironment;
 import java.awt.Toolkit;
-import java.awt.event.KeyEvent;
-import java.awt.event.KeyListener;
 import java.awt.image.BufferStrategy;
+import java.util.Vector;
+
 import javax.swing.*;
 
 
@@ -15,20 +14,28 @@ import javax.swing.*;
 public class Ventana extends JFrame implements Runnable {
 
 	private static final int NUMERO_FLIPPING_BUFFERS = 2;
-	private static final int TIEMPO_ESPERA = 20;
-	private static final int NO_DELAYS_PER_YIELD = 16;
-
+	private static final int FPS_DESEADO = 60; //de 60 para abajo anda bien
+	private static final int TIEMPO_ESPERA = (int) (1/(FPS_DESEADO/1000.0));
+	private static final int NUMERO_PROMEDIAR = 15;
 	
 	//Atributos
 	private boolean ejecutando=true;
 	private Thread threadprincipal;
 	
+	
+	//Calculo de FPS
+	private Vector<Double> ultimosFPS = new Vector<Double>() ;
+	private double FPS_ult_promedio=0;
+	
+	//Objs Para Pantalla Completa
 	private int  ancho;
 	private int largo;
 	private GraphicsDevice graphicsdevice; //Tarjeta de Video
 	private Graphics graphics;
 	private BufferStrategy bufferstrategy;
 		
+	
+	/*Constructor de la ventana*/
 	public Ventana (){
 		super("Mi Juego 1.0");
 		
@@ -39,8 +46,10 @@ public class Ventana extends JFrame implements Runnable {
 		
 	}
 	
-	private void pintar(Graphics g) {
-		/*Pintar su juego*/
+	
+	/*Pintar su juego*/
+	private void renderizar_pantalla(Graphics g) {
+		
 		 g.setColor(Color.blue);
 		 g.fillRect (0, 0, ancho, largo);
 		 
@@ -48,7 +57,7 @@ public class Ventana extends JFrame implements Runnable {
 		   
 		 g.setColor(Color.WHITE);
 		 g.setFont(font);
-		 g.drawString("FPS: ", 25, 20);
+		 g.drawString("FPS: "+FPS_ult_promedio, 25, 20);
 	}
 
 	private void actualizarJuego() {
@@ -57,15 +66,11 @@ public class Ventana extends JFrame implements Runnable {
 	
 	
 	public void run() {
-		/*Ciclo Principal: Espera o Adelanta tiempo para mantener FPS constantes*/
+		/*Ciclo Principal: Espera tiempo para mantener FPS constantes*/
 		long nuevotiempo= 0L ;
 		long viejotiempo= 0L ;
 		long diferenciatiempo=0L;
-		long exesoacomuladotiempo=0L;
-	    int noDelays = 0;
-	    long excess = 0L;
-	    long faltadormirtiempo=0;
-	    
+	    long faltodormirtiempo=0L;
 		viejotiempo = System.nanoTime();
 	    
 		while(ejecutando){
@@ -74,34 +79,69 @@ public class Ventana extends JFrame implements Runnable {
 			actualizarPantalla();
 						
 			nuevotiempo = System.nanoTime();
-			diferenciatiempo = nuevotiempo - viejotiempo;
-			faltadormirtiempo = (TIEMPO_ESPERA - diferenciatiempo) - exesoacomuladotiempo;  
-
-			if (faltadormirtiempo > 0) {   // SI FALTA ESPERAR MAS TIEMPO:
-				try {
-					Thread.sleep(faltadormirtiempo/1000000L);  // nano -> ms
-				}
-				catch(InterruptedException ex){}
-				exesoacomuladotiempo = (System.nanoTime() - nuevotiempo) - faltadormirtiempo;
-			}
-			else {    //Se tardo mas que el tiempo de espera
-				excess -= faltadormirtiempo;  // store excess time value
-				exesoacomuladotiempo = 0L;
-
-				if (++noDelays >= NO_DELAYS_PER_YIELD) {
-					Thread.yield();   // give another thread a chance to run
-					noDelays = 0;
-				}
-			}
-			viejotiempo = System.nanoTime();
-		}
-		System.exit(0);
-	}
+			diferenciatiempo = (nuevotiempo - viejotiempo)/1000000L;// nano -> ms
+			faltodormirtiempo = (TIEMPO_ESPERA - diferenciatiempo); 
 			
+			if (faltodormirtiempo > 0) {   // SI FALTA ESPERAR MAS TIEMPO:
+				try {Thread.sleep(faltodormirtiempo);}
+				catch(InterruptedException ex){}
+			}
+			
+			else {    //Se tardo mas que el tiempo de espera dormir un poquito
+				try {Thread.sleep(5);} 
+				catch (InterruptedException e) {e.printStackTrace();}
+			}
+			
+			calcular_fps_promedio(viejotiempo);
+			viejotiempo = System.nanoTime();
+			
+		
+		
+		} //fin del while ejecutando
+		System.exit(0);
+		
+	}//fin de run
+	
+
+	public void cerrar() {
+		ejecutando=false;		
+	}
+	
+	public void calcular_fps_promedio(long viejotiempo){
+		double fps_actual =calcular_fps_actual(System.nanoTime(),viejotiempo);
+		ultimosFPS.add(fps_actual);
+		
+		if (ultimosFPS.size()>NUMERO_PROMEDIAR){
+			calcularpromedio();
+			ultimosFPS.clear();		}
+		
+		
+	}
+	
+	public void calcularpromedio(){
+		double suma=0;
+		for(int i=0;i<ultimosFPS.size(); i++ )suma+=ultimosFPS.elementAt(i);
+		
+		FPS_ult_promedio=suma/ultimosFPS.size();
+	}
+	
+	public double calcular_fps_actual(long tiempoactual, long tiempoinicial){
+		double FPS_actual;
+		double diftiempo= (tiempoactual-tiempoinicial)/1000000000.0;
+		FPS_actual= (double)1.00/diftiempo;
+		return FPS_actual;
+		
+	}
+	
+	
+
+	/***************************************************************
+	 * Funciones para utilizar pantalla completa* */
+	
 	private void actualizarPantalla() {
 		graphics= bufferstrategy.getDrawGraphics();
 				
-		pintar(graphics);
+		renderizar_pantalla(graphics);
 		
 		graphics.dispose();
 		if(!bufferstrategy.contentsLost())bufferstrategy.show();
@@ -152,10 +192,11 @@ public class Ventana extends JFrame implements Runnable {
 		}
 		bufferstrategy = getBufferStrategy();
 	}
-
-	public void cerrar() {
-		ejecutando=false;		
-	}
+	
+	/** FIN DE Funciones pantalla completa*
+	 **************************************************************  */
+	
+	
 
 	public static void main(String[] args) {
 		Ventana v1= new Ventana();
